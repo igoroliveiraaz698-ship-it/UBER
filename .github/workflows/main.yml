@@ -16,12 +16,12 @@ jobs:
           eas-version: latest
           packager: npm
           token: ${{ secrets.EXPO_TOKEN }}
-      - run: npm install --legacy-peer-deps
+      - run: rm -f package-lock.json && npm install
       - run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add package-lock.json
-          git commit -m "Add package-lock.json" || true
+          git commit -m "Sync package-lock.json" || true
           git push || true
       - run: npx eas-cli init --id 0d4d1f76-5801-4a03-9e9a-23b95b422a74 --non-interactive --force
       - run: npx eas-cli build -p android --profile preview --non-interactive --no-wait
