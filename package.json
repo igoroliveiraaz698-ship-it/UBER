@@ -1,16 +1,8 @@
 {
-  "name": "meuapp-uber",
-  "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "start": "expo start",
-    "android": "expo start --android"
-  },
   "dependencies": {
-    "expo": "~54.0.0",
-    "expo-status-bar": "~3.0.4",
-    "react": "19.1.0",
-    "react-native": "0.81.4"
-  },
-  "private": true
+    "expo-status-bar": "~2.0.0",
+    "react-native-maps": "1.18.0",
+    "expo-location": "~18.0.4",
+    "@expo/vector-icons": "^14.0.0"
+  }
 }
