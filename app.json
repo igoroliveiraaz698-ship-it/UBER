@@ -1,14 +1,13 @@
 {
   "expo": {
-    "name": "meu app uber",
-    "slug": "snack-3d01cec2-4438-4d3d-adfb-64e64904f41f",
+    "name": "MeuApp Uber",
+    "slug": "meuapp-uber",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": ".icon.png",
+    "icon": "./icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "splash": {
-      "image": ".splash-icon.png",
+      "image": "./splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -16,14 +15,14 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.igor.meuappuber",
       "adaptiveIcon": {
-        "foregroundImage": ".adaptive-icon.png",
+        "foregroundImage": "./adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      },
-      "edgeToEdgeEnabled": true
+      }
     },
     "web": {
-      "favicon": ".favicon.png"
+      "favicon": "./favicon.png"
     }
   }
 }
