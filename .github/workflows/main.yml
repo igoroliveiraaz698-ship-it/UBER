@@ -15,4 +15,6 @@ jobs:
           packager: npm
           token: ${{ secrets.EXPO_TOKEN }}
       - run: npm install --legacy-peer-deps
+      - run: npx eas-cli init --id 0d4d1f76-5801-4a03-9e9a-23b95b422a74 --non-interactive --force
       - run: npx eas-cli build -p android --profile preview --non-interactive --no-wait
+      
