@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, Text, View, TouchableOpacity, TextInput,
-  SafeAreaView, Alert, ScrollView, ActivityIndicator, Linking
+  Alert, ScrollView, ActivityIndicator, Linking,
+  KeyboardAvoidingView, Platform, StatusBar
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
@@ -11,6 +12,8 @@ const DB = 'https://firebaseio.com';
 export default function App() {
   const [modo, setModo] = useState(null);
   const [nome, setNome] = useState('Igor');
+  const [carro, setCarro] = useState('');
+  const [placa, setPlaca] = useState('');
   const [pos, setPos] = useState({ lat: -22.7556, lng: -46.1447 });
   const [dest, setDest] = useState(null);
   const [rua, setRua] = useState('');
@@ -19,13 +22,15 @@ export default function App() {
   const [carregando, setCarregando] = useState(false);
 
   useEffect(() => {
-    Location.requestForegroundPermissionsAsync().then(({ status }) => {
-      if (status === 'granted') {
-        Location.getCurrentPositionAsync({}).then(l => {
-          setPos({ lat: l.coords.latitude, lng: l.coords.longitude });
-        });
-      }
-    });
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({});
+          setPos({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+        }
+      } catch (e) {}
+    })();
   }, []);
 
   useEffect(() => {
@@ -42,13 +47,36 @@ export default function App() {
         const lista = Object.keys(d).map(id => ({ id, ...d[id] }));
         if (modo === 'motorista') setPedidos(lista.reverse());
         if (modo === 'passageiro' && minhaCorrida) {
-          if (d[minhaCorrida.id]) setMinhaCorrida({ id: minhaCorrida.id, ...d[minhaCorrida.id] });
-          else setMinhaCorrida(null);
+          if (d[minhaCorrida.id]) {
+            setMinhaCorrida({ id: minhaCorrida.id, ...d[minhaCorrida.id] });
+          } else {
+            setMinhaCorrida(null);
+          }
         }
       } catch (e) {}
     }, 3000);
     return () => clearInterval(t);
   }, [modo, minhaCorrida]);
+
+  const buscarEndereco = async () => {
+    if (!rua.trim()) {
+      return Alert.alert('Endereço', 'Digite o nome da rua, bairro ou cidade.');
+    }
+    setCarregando(true);
+    try {
+      const url = `https://openstreetmap.org{encodeURIComponent(rua + ', Brasil')}&limit=1`;
+      const res = await fetch(url, { headers: { 'User-Agent': 'MeuAppUber/1.0' } });
+      const dados = await res.json();
+      if (dados && dados.length > 0) {
+        setDest({ lat: parseFloat(dados[0].lat), lng: parseFloat(dados[0].lon) });
+      } else {
+        Alert.alert('Não encontrado', 'Tente colocar o nome da cidade junto, ou toque direto no mapa.');
+      }
+    } catch (e) {
+      Alert.alert('Erro', 'Falha na busca. Você pode tocar direto no mapa.');
+    }
+    setCarregando(false);
+  };
 
   const calcularPreco = () => {
     if (!dest) return { km: '2.0', valor: '12,00' };
@@ -63,8 +91,7 @@ export default function App() {
 
   const pedir = async () => {
     if (!dest && !rua.trim()) {
-      Alert.alert('Destino', 'Toque no mapa ou digite o nome da rua!');
-      return;
+      return Alert.alert('Destino', 'Busque um endereço ou toque em um ponto do mapa.');
     }
     setCarregando(true);
     const info = calcularPreco();
@@ -76,119 +103,329 @@ export default function App() {
       distancia: `${info.km} km`,
       valor: `R$ ${info.valor}`,
       status: 'aguardando',
-      motorista: ''
+      motorista: '',
+      veiculo: '',
+      placa: ''
     };
-    const r = await fetch(`${DB}.json`, { method: 'POST', body: JSON.stringify(body) });
-    const d = await r.json();
-    setMinhaCorrida({ id: d.name, ...body });
+    try {
+      const r = await fetch(`${DB}.json`, { method: 'POST', body: JSON.stringify(body) });
+      const d = await r.json();
+      setMinhaCorrida({ id: d.name, ...body });
+    } catch (e) {
+      Alert.alert('Erro', 'Não foi possível enviar o pedido agora.');
+    }
     setCarregando(false);
   };
 
-  const aceitar = (id) => fetch(`${DB}/${id}.json`, { method: 'PATCH', body: JSON.stringify({ status: 'aceita', motorista: nome }) });
+  const aceitar = (id) => {
+    fetch(`${DB}/${id}.json`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        status: 'aceita',
+        motorista: nome,
+        veiculo: carro || 'Carro Parceiro',
+        placa: placa.toUpperCase() || 'SEM PLACA'
+      })
+    });
+  };
+
   const finalizar = (id) => fetch(`${DB}/${id}.json`, { method: 'DELETE' });
 
-  const mapa = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><link rel="stylesheet" href="https://unpkg.com"/><script src="https://unpkg.com"></script><style>body,html,#m{margin:0;height:100%;width:100%}</style></head><body><div id="m"></div><script>var m=L.map('m',{zoomControl:false}).setView([${pos.lat},${pos.lng}],15);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(m);L.circleMarker([${pos.lat},${pos.lng}],{radius:8,fillColor:'#2563eb',color:'#fff',weight:3,fillOpacity:1}).addTo(m);var mk,ln;${dest ? `mk=L.marker([${dest.lat},${dest.lng}]).addTo(m);ln=L.polyline([[${pos.lat},${pos.lng}],[${dest.lat},${dest.lng}]],{color:'#111',weight:4}).addTo(m);` : ''}m.on('click',function(e){if(mk)m.removeLayer(mk);if(ln)m.removeLayer(ln);mk=L.marker(e.latlng).addTo(m);ln=L.polyline([[${pos.lat},${pos.lng}],e.latlng],{color:'#111',weight:4}).addTo(m);window.ReactNativeWebView.postMessage(JSON.stringify(e.latlng))});</script></body></html>`;
+  const entrarMotorista = () => {
+    if (!nome.trim() || !carro.trim() || !placa.trim()) {
+      return Alert.alert('Dados do Veículo', 'Preencha seu Nome, Modelo/Cor do Carro e Placa.');
+    }
+    setModo('motorista');
+  };
 
-  if (!modo) return (
-    <SafeAreaView style={s.login}>
-      <Text style={s.titulo}>MeuApp Uber</Text>
-      <Text style={s.sub}>Camanducaia & Monte Verde • Tempo Real</Text>
-      <TextInput style={s.input} value={nome} onChangeText={setNome} placeholder="Seu nome" />
-      <TouchableOpacity style={s.btnAzul} onPress={() => setModo('passageiro')}><Text style={s.txt}>Entrar como Passageiro</Text></TouchableOpacity>
-      <TouchableOpacity style={s.btnVerde} onPress={() => setModo('motorista')}><Text style={s.txt}>Entrar como Motorista</Text></TouchableOpacity>
-    </SafeAreaView>
-  );
+  const mapaHtml = `<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes">
+<link rel="stylesheet" href="https://unpkg.com"/>
+<script src="https://unpkg.com"></script>
+<style>
+  html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #18181b; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+  var map = L.map('map', { zoomControl: true }).setView([${pos.lat}, ${pos.lng}], 15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: ''
+  }).addTo(map);
+
+  L.circleMarker([${pos.lat}, ${pos.lng}], {
+    radius: 9, fillColor: '#3b82f6', color: '#ffffff', weight: 3, fillOpacity: 1
+  }).addTo(map);
+
+  var markerDest = null;
+  var rotaLinha = null;
+
+  ${dest ? `
+    markerDest = L.marker([${dest.lat}, ${dest.lng}]).addTo(map);
+    rotaLinha = L.polyline([[${pos.lat}, ${pos.lng}], [${dest.lat}, ${dest.lng}]], { color: '#000000', weight: 5 }).addTo(map);
+    map.fitBounds(rotaLinha.getBounds(), { padding: [40, 40] });
+  ` : ''}
+
+  map.on('click', function(e) {
+    if (markerDest) map.removeLayer(markerDest);
+    if (rotaLinha) map.removeLayer(rotaLinha);
+    markerDest = L.marker(e.latlng).addTo(map);
+    rotaLinha = L.polyline([[${pos.lat}, ${pos.lng}], e.latlng], { color: '#000000', weight: 5 }).addTo(map);
+    window.ReactNativeWebView.postMessage(JSON.stringify(e.latlng));
+  });
+</script>
+</body>
+</html>`;
+
+  if (!modo) {
+    return (
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.telaPreta}>
+        <StatusBar barStyle="light-content" backgroundColor="#09090b" />
+        <ScrollView contentContainerStyle={s.scrollLogin} keyboardShouldPersistTaps="handled">
+          <Text style={s.logo}>UBER</Text>
+          <Text style={s.sub}>Mobilidade em Tempo Real</Text>
+
+          <View style={s.cartao}>
+            <Text style={s.label}>SEU NOME</Text>
+            <TextInput
+              style={s.inputEscuro}
+              value={nome}
+              onChangeText={setNome}
+              placeholder="Digite seu nome"
+              placeholderTextColor="#71717a"
+            />
+            <TouchableOpacity style={s.btnBranco} onPress={() => setModo('passageiro')}>
+              <Text style={s.txtPreto}>Entrar como Passageiro</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={s.cartao}>
+            <Text style={s.tituloSecao}>ÁREA DO MOTORISTA</Text>
+            <Text style={s.label}>MODELO E COR DO CARRO</Text>
+            <TextInput
+              style={s.inputEscuro}
+              value={carro}
+              onChangeText={setCarro}
+              placeholder="Ex: Onix Prata"
+              placeholderTextColor="#71717a"
+            />
+            <Text style={s.label}>PLACA DO VEÍCULO</Text>
+            <TextInput
+              style={s.inputEscuro}
+              value={placa}
+              onChangeText={setPlaca}
+              placeholder="Ex: ABC-1234"
+              placeholderTextColor="#71717a"
+              autoCapitalize="characters"
+            />
+            <TouchableOpacity style={s.btnVerde} onPress={entrarMotorista}>
+              <Text style={s.txtBranco}>Ficar Online como Motorista</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
 
   const info = calcularPreco();
 
   return (
-    <SafeAreaView style={s.tela}>
-      <View style={s.topo}>
-        <Text style={s.txt}>{nome} ({modo.toUpperCase()})</Text>
-        <TouchableOpacity style={s.btnTrocar} onPress={() => setModo(null)}><Text style={s.txtPeq}>Trocar</Text></TouchableOpacity>
-      </View>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.telaPreta}>
+      <StatusBar barStyle="light-content" backgroundColor="#09090b" />
 
-      <WebView
-        source={{ html: mapa }}
-        style={{ flex: 1 }}
-        onMessage={e => {
-          if (modo === 'passageiro' && !minhaCorrida) {
-            setDest(JSON.parse(e.nativeEvent.data));
-            if (!rua) setRua('Ponto marcado no mapa');
-          }
-        }}
-      />
-
-      {modo === 'passageiro' ? (
-        <View style={s.box}>
-          {!minhaCorrida ? (
-            <>
-              <Text style={s.dica}>Toque no mapa acima para marcar seu destino:</Text>
-              <TextInput style={s.input} value={rua} onChangeText={setRua} placeholder="Ou digite o endereço..." />
-              {dest && <Text style={s.preco}>Distância: {info.km} km • Valor: R$ {info.valor}</Text>}
-              <TouchableOpacity style={s.btnPreto} onPress={pedir} disabled={carregando}>
-                {carregando ? <ActivityIndicator color="#fff" /> : <Text style={s.txt}>Chamar Motorista</Text>}
-              </TouchableOpacity>
-            </>
-          ) : (
-            <View style={{ alignItems: 'center' }}>
-              <Text style={s.aviso}>{minhaCorrida.status === 'aguardando' ? 'Procurando motorista próximo...' : `Motorista ${minhaCorrida.motorista} a caminho!`}</Text>
-              <Text style={s.subCard}>{minhaCorrida.destino} • {minhaCorrida.valor}</Text>
-              <TouchableOpacity style={s.btnVermelho} onPress={() => { finalizar(minhaCorrida.id); setMinhaCorrida(null); setDest(null); }}>
-                <Text style={s.txt}>Cancelar Corrida</Text>
-              </TouchableOpacity>
-            </View>
+      <View style={s.barraTopo}>
+        <View style={{ flex: 1 }}>
+          <Text style={s.nomeTopo}>{nome} • {modo === 'passageiro' ? 'PASSAGEIRO' : 'MOTORISTA'}</Text>
+          {modo === 'motorista' && (
+            <Text style={s.subTopo}>{carro} • {placa.toUpperCase()}</Text>
           )}
         </View>
-      ) : (
-        <View style={s.boxMotorista}>
-          <Text style={s.tituloFila}>Chamados em Tempo Real ({pedidos.length})</Text>
-          <ScrollView>
-            {pedidos.length === 0 ? <Text style={{ color: '#666' }}>Aguardando passageiros...</Text> : pedidos.map(p => (
-              <View key={p.id} style={s.card}>
-                <Text style={{ fontWeight: 'bold', fontSize: 15 }}>{p.passageiro} • {p.valor} ({p.distancia})</Text>
-                <Text style={{ color: '#444', marginVertical: 4 }}>Destino: {p.destino}</Text>
-                {p.status === 'aguardando' ? (
-                  <TouchableOpacity style={s.btnVerde} onPress={() => aceitar(p.id)}><Text style={s.txt}>Aceitar Corrida</Text></TouchableOpacity>
-                ) : (
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <TouchableOpacity style={[s.btnAzul, { flex: 1, marginBottom: 0 }]} onPress={() => Linking.openURL(`https://google.com{p.origem.lat},${p.origem.lng}`)}>
-                      <Text style={s.txt}>Abrir GPS</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[s.btnPreto, { flex: 1, marginTop: 0 }]} onPress={() => finalizar(p.id)}>
-                      <Text style={s.txt}>Finalizar</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-            ))}
-          </ScrollView>
-        </View>
-      )}
-    </SafeAreaView>
-  );
-}
+        <TouchableOpacity style={s.btnSair} onPress={() => setModo(null)}>
+          <Text style={s.txtBrancoPeq}>Trocar</Text>
+        </TouchableOpacity>
+      </View>
 
-const s = StyleSheet.create({
-  login: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#111827' },
-  titulo: { color: '#fff', fontSize: 30, fontWeight: 'bold', textAlign: 'center' },
-  sub: { color: '#9ca3af', textAlign: 'center', marginBottom: 24, marginTop: 4 },
-  tela: { flex: 1, backgroundColor: '#f3f4f6' },
-  topo: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14, backgroundColor: '#111827' },
-  btnTrocar: { backgroundColor: '#374151', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
-  txtPeq: { color: '#fff', fontSize: 12 },
-  box: { padding: 16, backgroundColor: '#fff', borderTopLeftRadius: 18, borderTopRightRadius: 18 },
-  boxMotorista: { padding: 16, backgroundColor: '#fff', height: '42%', borderTopLeftRadius: 18, borderTopRightRadius: 18 },
-  dica: { fontSize: 13, color: '#4b5563', marginBottom: 6, fontWeight: '600' },
-  preco: { fontSize: 16, fontWeight: 'bold', color: '#10b981', marginBottom: 10 },
-  input: { backgroundColor: '#f3f4f6', padding: 12, borderRadius: 8, marginBottom: 10, fontSize: 15 },
-  btnAzul: { backgroundColor: '#2563eb', padding: 14, borderRadius: 8, alignItems: 'center', marginBottom: 10 },
-  btnVerde: { backgroundColor: '#10b981', padding: 14, borderRadius: 8, alignItems: 'center', marginTop: 4 },
-  btnPreto: { backgroundColor: '#111827', padding: 14, borderRadius: 8, alignItems: 'center', marginTop: 4 },
-  btnVermelho: { backgroundColor: '#ef4444', padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 10, width: '100%' },
-            txt: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
-aviso: { fontSize: 17, fontWeight: 'bold', color: '#111827' },
-subCard: { color: '#4b5563', marginTop: 4 },
-tituloFila: { fontSize: 16, fontWeight: 'bold', marginBottom: 10 },
-card: { padding: 12, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, marginBottom: 10, backgroundColor: '#f9fafb' }
+      <View style={s.areaMapa}>
+        <WebView
+          originWhitelist={['*']}
+          source={{ html: mapaHtml }}
+          style={{ flex: 1, backgroundColor: '#18181b' }}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          mixedContentMode="always"
+          onMessage={e => {
+            if (modo === 'passageiro' && !minhaCorrida) {
+              setDest(JSON.parse(e.nativeEvent.data));
+              if (!rua) setRua('Ponto marcado no mapa');
+            }
+          }}
+        />
+      </View>
+
+      {modo === 'passageiro' ? (
+        <View style={s.painelInferior}>
+          {!minhaCorrida ? (
+            <>
+              <Text style={s.label}>PARA ONDE VAMOS? (BUSQUE OU TOQUE NO MAPA)</Text>
+              <View style={s.linhaBusca}>
+                <TextInput
+                  style={[s.inputEscuro, { flex: 1, marginBottom: 0 }]}
+                  value={rua}
+                  onChangeText={setRua}
+                  marginBottom: 12,
+fontSize: 15,
+borderWidth: 1,
+borderColor: '#3f3f46',
+},
+btnBranco: {
+backgroundColor: '#ffffff',
+padding: 15,
+borderRadius: 10,
+alignItems: 'center',
+justifyContent: 'center',
+},
+btnVerde: {
+backgroundColor: '#10b981',
+padding: 15,
+borderRadius: 10,
+alignItems: 'center',
+justifyContent: 'center',
+},
+btnVermelho: {
+backgroundColor: '#ef4444',
+padding: 14,
+borderRadius: 10,
+alignItems: 'center',
+justifyContent: 'center',
+marginTop: 12,
+width: '100%',
+},
+btnBuscar: {
+backgroundColor: '#ffffff',
+paddingHorizontal: 18,
+borderRadius: 10,
+justifyContent: 'center',
+alignItems: 'center',
+},
+txtPreto: {
+color: '#09090b',
+fontWeight: 'bold',
+fontSize: 15,
+},
+txtBranco: {
+color: '#ffffff',
+fontWeight: 'bold',
+fontSize: 15,
+},
+txtBrancoPeq: {
+color: '#ffffff',
+fontWeight: 'bold',
+fontSize: 12,
+},
+txtCinza: {
+color: '#a1a1aa',
+fontSize: 14,
+marginTop: 4,
+},
+barraTopo: {
+flexDirection: 'row',
+alignItems: 'center',
+justifyContent: 'space-between',
+paddingHorizontal: 16,
+paddingVertical: 12,
+backgroundColor: '#09090b',
+borderBottomWidth: 1,
+borderBottomColor: '#27272a',
+},
+nomeTopo: {
+color: '#ffffff',
+fontWeight: 'bold',
+fontSize: 15,
+},
+subTopo: {
+color: '#10b981',
+fontSize: 12,
+marginTop: 2,
+fontWeight: 'bold',
+},
+btnSair: {
+backgroundColor: '#27272a',
+paddingHorizontal: 14,
+paddingVertical: 8,
+borderRadius: 8,
+},
+areaMapa: {
+flex: 1,
+backgroundColor: '#18181b',
+},
+painelInferior: {
+backgroundColor: '#18181b',
+padding: 18,
+borderTopLeftRadius: 20,
+borderTopRightRadius: 20,
+borderTopWidth: 1,
+borderTopColor: '#27272a',
+},
+painelMotorista: {
+backgroundColor: '#18181b',
+padding: 18,
+height: '44%',
+borderTopLeftRadius: 20,
+borderTopRightRadius: 20,
+borderTopWidth: 1,
+borderTopColor: '#27272a',
+},
+linhaBusca: {
+flexDirection: 'row',
+gap: 8,
+marginBottom: 12,
+},
+linhaPreco: {
+flexDirection: 'row',
+justifyContent: 'space-between',
+alignItems: 'center',
+marginBottom: 10,
+},
+valorDestaque: {
+color: '#10b981',
+fontSize: 18,
+fontWeight: 'bold',
+},
+tituloStatus: {
+color: '#ffffff',
+fontSize: 18,
+fontWeight: 'bold',
+},
+etiquetaCarro: {
+backgroundColor: '#27272a',
+paddingHorizontal: 14,
+paddingVertical: 8,
+borderRadius: 8,
+marginVertical: 8,
+borderWidth: 1,
+borderColor: '#10b981',
+},
+txtEtiqueta: {
+color: '#10b981',
+fontWeight: 'bold',
+fontSize: 14,
+},
+cardPedido: {
+backgroundColor: '#27272a',
+padding: 14,
+borderRadius: 12,
+marginBottom: 10,
+borderWidth: 1,
+borderColor: '#3f3f46',
+},
+linhaAcoes: {
+flexDirection: 'row',
+gap: 10,
+marginTop: 10,
+},
 });
+  
