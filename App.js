@@ -14,6 +14,7 @@ export default function App() {
   const [nome, setNome] = useState('Igor');
   const [carro, setCarro] = useState('');
   const [placa, setPlaca] = useState('');
+  const [categoria, setCategoria] = useState('UberX');
   const [pos, setPos] = useState({ lat: -22.7556, lng: -46.1447 });
   const [dest, setDest] = useState(null);
   const [rua, setRua] = useState('');
@@ -70,23 +71,27 @@ export default function App() {
       if (dados && dados.length > 0) {
         setDest({ lat: parseFloat(dados.lat), lng: parseFloat(dados.lon) });
       } else {
-        Alert.alert('Não encontrado', 'Tente colocar o nome da cidade junto, ou toque direto no mapa.');
+        Alert.alert('Não encontrado', 'Coloque o nome da cidade junto, ou toque direto no mapa.');
       }
     } catch (e) {
-      Alert.alert('Erro', 'Falha na busca. Você pode tocar direto no mapa.');
+      Alert.alert('Aviso', 'Toque diretamente no mapa para marcar o destino.');
     }
     setCarregando(false);
   };
 
   const calcularPreco = () => {
-    if (!dest) return { km: '2.0', valor: '12,00' };
-    const R = 6371;
-    const dLat = ((dest.lat - pos.lat) * Math.PI) / 180;
-    const dLon = ((dest.lng - pos.lng) * Math.PI) / 180;
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos((pos.lat * Math.PI) / 180) * Math.cos((dest.lat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
-    const km = Math.max(1.2, (R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * 1.3)).toFixed(1);
-    const valor = Math.max(8, Number(km) * 3.5 + 4).toFixed(2).replace('.', ',');
-    return { km, valor };
+    let km = 2.0;
+    if (dest) {
+      const R = 6371;
+      const dLat = ((dest.lat - pos.lat) * Math.PI) / 180;
+      const dLon = ((dest.lng - pos.lng) * Math.PI) / 180;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos((pos.lat * Math.PI) / 180) * Math.cos((dest.lat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+      km = Math.max(1.2, R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * 1.3);
+    }
+    const tarifaBase = categoria === 'Moto' ? 3.0 : 5.0;
+    const tarifaKm = categoria === 'Moto' ? 2.2 : 3.5;
+    const valor = Math.max(7, km * tarifaKm + tarifaBase).toFixed(2).replace('.', ',');
+    return { km: km.toFixed(1), valor };
   };
 
   const pedir = async () => {
@@ -97,6 +102,7 @@ export default function App() {
     const info = calcularPreco();
     const body = {
       passageiro: nome,
+      categoria: categoria,
       origem: pos,
       destinoCoords: dest || pos,
       destino: rua || 'Ponto marcado no mapa',
@@ -123,7 +129,7 @@ export default function App() {
       body: JSON.stringify({
         status: 'aceita',
         motorista: nome,
-        veiculo: carro || 'Carro Parceiro',
+        veiculo: carro || 'Veículo Parceiro',
         placa: placa.toUpperCase() || 'SEM PLACA'
       })
     });
@@ -133,10 +139,16 @@ export default function App() {
 
   const entrarMotorista = () => {
     if (!nome.trim() || !carro.trim() || !placa.trim()) {
-      return Alert.alert('Dados do Veículo', 'Preencha seu Nome, Modelo/Cor do Carro e Placa.');
+      return Alert.alert('Cadastro', 'Preencha seu Nome, Modelo/Cor do Veículo e Placa.');
     }
     setModo('motorista');
   };
+
+  const destScript = dest
+    ? `markerDest = L.marker([${dest.lat}, ${dest.lng}]).addTo(map);
+       rotaLinha = L.polyline([[${pos.lat}, ${pos.lng}], [${dest.lat}, ${dest.lng}]], { color: '#000000', weight: 5 }).addTo(map);
+       map.fitBounds(rotaLinha.getBounds(), { padding: [40, 40] });`
+    : '';
 
   const mapaHtml = `<!DOCTYPE html>
 <html>
@@ -152,24 +164,11 @@ export default function App() {
 <div id="map"></div>
 <script>
   var map = L.map('map', { zoomControl: true }).setView([${pos.lat}, ${pos.lng}], 15);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: ''
-  }).addTo(map);
-
-  L.circleMarker([${pos.lat}, ${pos.lng}], {
-    radius: 9, fillColor: '#3b82f6', color: '#ffffff', weight: 3, fillOpacity: 1
-  }).addTo(map);
-
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '' }).addTo(map);
+  L.circleMarker([${pos.lat}, ${pos.lng}], { radius: 9, fillColor: '#3b82f6', color: '#ffffff', weight: 3, fillOpacity: 1 }).addTo(map);
   var markerDest = null;
   var rotaLinha = null;
-
-  ${dest ? `
-    markerDest = L.marker([${dest.lat}, ${dest.lng}]).addTo(map);
-    rotaLinha = L.polyline([[${pos.lat}, ${pos.lng}], [${dest.lat}, ${dest.lng}]], { color: '#000000', weight: 5 }).addTo(map);
-    map.fitBounds(rotaLinha.getBounds(), { padding: [40, 40] });
-  ` : ''}
-
+  ${destScript}
   map.on('click', function(e) {
     if (markerDest) map.removeLayer(markerDest);
     if (rotaLinha) map.removeLayer(rotaLinha);
@@ -187,7 +186,7 @@ export default function App() {
         <StatusBar barStyle="light-content" backgroundColor="#09090b" />
         <ScrollView contentContainerStyle={s.scrollLogin} keyboardShouldPersistTaps="handled">
           <Text style={s.logo}>UBER</Text>
-          <Text style={s.sub}>Mobilidade em Tempo Real</Text>
+          <Text style={s.sub}>Mobilidade em Tempo Real • Brasil</Text>
 
           <View style={s.cartao}>
             <Text style={s.label}>SEU NOME</Text>
@@ -205,12 +204,12 @@ export default function App() {
 
           <View style={s.cartao}>
             <Text style={s.tituloSecao}>ÁREA DO MOTORISTA</Text>
-            <Text style={s.label}>MODELO E COR DO CARRO</Text>
+            <Text style={s.label}>MODELO E COR DO VEÍCULO</Text>
             <TextInput
               style={s.inputEscuro}
               value={carro}
               onChangeText={setCarro}
-              placeholder="Ex: Onix Prata"
+              placeholder="Ex: Onix Prata ou Honda CG"
               placeholderTextColor="#71717a"
             />
             <Text style={s.label}>PLACA DO VEÍCULO</Text>
@@ -271,256 +270,4 @@ export default function App() {
           {!minhaCorrida ? (
             <>
               <Text style={s.label}>PARA ONDE VAMOS? (BUSQUE OU TOQUE NO MAPA)</Text>
-              <View style={s.linhaBusca}>
-                <TextInput
-                  style={[s.inputEscuro, { flex: 1, marginBottom: 0 }]}
-                  value={rua}
-                  onChangeText={setRua}
-    placeholder="Rua, bairro ou cidade..."
-placeholderTextColor="#71717a"
-/>
-{dest && (
-)}
-{carregando ?  : Chamar Motorista}
-
-</>
-) : (
-<View style={{ alignItems: 'center' }}>
-{minhaCorrida.status === 'aceita' && (
-)}
-<TouchableOpacity
-style={s.btnVermelho}
-onPress={() => { finalizar(minhaCorrida.id); setMinhaCorrida(null); setDest(null); }}
->
-)}
-
-) : (
-{pedidos.length === 0 ? (
-) : (
-pedidos.map(p => (
-
-{p.status === 'aguardando' ? (
-<TouchableOpacity style={[s.btnVerde, { marginTop: 10 }]} onPress={() => aceitar(p.id)}>
-) : (
-
-<TouchableOpacity
-style={[s.btnBranco, { flex: 1 }]}
-onPress={() => Linking.openURL(https://google.com{p.origem.lat},${p.origem.lng})}
->
-<TouchableOpacity
-style={[s.btnVermelho, { flex: 1, marginTop: 0 }]}
-onPress={() => finalizar(p.id)}
->
-)}
-
-))
-)}
-
-
-)}
-
-);
-}
-const s = StyleSheet.create({
-telaPreta: {
-flex: 1,
-backgroundColor: '#09090b',
-paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-},
-scrollLogin: {
-flexGrow: 1,
-justifyContent: 'center',
-padding: 20,
-},
-logo: {
-color: '#ffffff',
-fontSize: 38,
-fontWeight: 'bold',
-textAlign: 'center',
-letterSpacing: 4,
-},
-sub: {
-color: '#a1a1aa',
-textAlign: 'center',
-marginBottom: 24,
-fontSize: 14,
-},
-cartao: {
-backgroundColor: '#18181b',
-padding: 18,
-borderRadius: 16,
-borderWidth: 1,
-borderColor: '#27272a',
-marginBottom: 16,
-},
-tituloSecao: {
-color: '#ffffff',
-fontSize: 14,
-fontWeight: 'bold',
-marginBottom: 12,
-letterSpacing: 1,
-},
-label: {
-color: '#a1a1aa',
-fontSize: 11,
-fontWeight: 'bold',
-marginBottom: 6,
-letterSpacing: 0.5,
-},
-inputEscuro: {
-backgroundColor: '#27272a',
-color: '#ffffff',
-padding: 14,
-borderRadius: 10,
-marginBottom: 12,
-fontSize: 15,
-borderWidth: 1,
-borderColor: '#3f3f46',
-},
-btnBranco: {
-backgroundColor: '#ffffff',
-padding: 15,
-borderRadius: 10,
-alignItems: 'center',
-justifyContent: 'center',
-},
-btnVerde: {
-backgroundColor: '#10b981',
-padding: 15,
-borderRadius: 10,
-alignItems: 'center',
-justifyContent: 'center',
-},
-btnVermelho: {
-backgroundColor: '#ef4444',
-padding: 14,
-borderRadius: 10,
-alignItems: 'center',
-justifyContent: 'center',
-marginTop: 12,
-width: '100%',
-},
-btnBuscar: {
-backgroundColor: '#ffffff',
-paddingHorizontal: 18,
-borderRadius: 10,
-justifyContent: 'center',
-alignItems: 'center',
-},
-txtPreto: {
-color: '#09090b',
-fontWeight: 'bold',
-fontSize: 15,
-},
-txtBranco: {
-color: '#ffffff',
-fontWeight: 'bold',
-fontSize: 15,
-},
-txtBrancoPeq: {
-color: '#ffffff',
-fontWeight: 'bold',
-fontSize: 12,
-},
-txtCinza: {
-color: '#a1a1aa',
-fontSize: 14,
-marginTop: 4,
-},
-barraTopo: {
-flexDirection: 'row',
-alignItems: 'center',
-justifyContent: 'space-between',
-paddingHorizontal: 16,
-paddingVertical: 12,
-backgroundColor: '#09090b',
-borderBottomWidth: 1,
-borderBottomColor: '#27272a',
-},
-nomeTopo: {
-color: '#ffffff',
-fontWeight: 'bold',
-fontSize: 15,
-},
-subTopo: {
-color: '#10b981',
-fontSize: 12,
-marginTop: 2,
-fontWeight: 'bold',
-},
-btnSair: {
-backgroundColor: '#27272a',
-paddingHorizontal: 14,
-paddingVertical: 8,
-borderRadius: 8,
-},
-areaMapa: {
-flex: 1,
-backgroundColor: '#18181b',
-},
-painelInferior: {
-backgroundColor: '#18181b',
-padding: 18,
-borderTopLeftRadius: 20,
-borderTopRightRadius: 20,
-borderTopWidth: 1,
-borderTopColor: '#27272a',
-},
-painelMotorista: {
-backgroundColor: '#18181b',
-padding: 18,
-height: '44%',
-borderTopLeftRadius: 20,
-borderTopRightRadius: 20,
-borderTopWidth: 1,
-borderTopColor: '#27272a',
-},
-linhaBusca: {
-flexDirection: 'row',
-gap: 8,
-marginBottom: 12,
-},
-linhaPreco: {
-flexDirection: 'row',
-justifyContent: 'space-between',
-alignItems: 'center',
-marginBottom: 10,
-},
-valorDestaque: {
-color: '#10b981',
-fontSize: 18,
-fontWeight: 'bold',
-},
-tituloStatus: {
-color: '#ffffff',
-fontSize: 18,
-fontWeight: 'bold',
-},
-etiquetaCarro: {
-backgroundColor: '#27272a',
-paddingHorizontal: 14,
-paddingVertical: 8,
-borderRadius: 8,
-marginVertical: 8,
-borderWidth: 1,
-borderColor: '#10b981',
-},
-txtEtiqueta: {
-color: '#10b981',
-fontWeight: 'bold',
-fontSize: 14,
-},
-cardPedido: {
-backgroundColor: '#27272a',
-padding: 14,
-borderRadius: 12,
-marginBottom: 10,
-borderWidth: 1,
-borderColor: '#3f3f46',
-},
-linhaAcoes: {
-flexDirection: 'row',
-gap: 10,
-marginTop: 10,
-},
-});
+      
