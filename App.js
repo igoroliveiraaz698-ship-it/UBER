@@ -68,7 +68,7 @@ export default function App() {
       const res = await fetch(url, { headers: { 'User-Agent': 'MeuAppUber/1.0' } });
       const dados = await res.json();
       if (dados && dados.length > 0) {
-        setDest({ lat: parseFloat(dados[0].lat), lng: parseFloat(dados[0].lon) });
+        setDest({ lat: parseFloat(dados.lat), lng: parseFloat(dados.lon) });
       } else {
         Alert.alert('Não encontrado', 'Tente colocar o nome da cidade junto, ou toque direto no mapa.');
       }
@@ -276,7 +276,103 @@ export default function App() {
                   style={[s.inputEscuro, { flex: 1, marginBottom: 0 }]}
                   value={rua}
                   onChangeText={setRua}
-                  marginBottom: 12,
+    placeholder="Rua, bairro ou cidade..."
+placeholderTextColor="#71717a"
+/>
+{dest && (
+)}
+{carregando ?  : Chamar Motorista}
+
+</>
+) : (
+<View style={{ alignItems: 'center' }}>
+{minhaCorrida.status === 'aceita' && (
+)}
+<TouchableOpacity
+style={s.btnVermelho}
+onPress={() => { finalizar(minhaCorrida.id); setMinhaCorrida(null); setDest(null); }}
+>
+)}
+
+) : (
+{pedidos.length === 0 ? (
+) : (
+pedidos.map(p => (
+
+{p.status === 'aguardando' ? (
+<TouchableOpacity style={[s.btnVerde, { marginTop: 10 }]} onPress={() => aceitar(p.id)}>
+) : (
+
+<TouchableOpacity
+style={[s.btnBranco, { flex: 1 }]}
+onPress={() => Linking.openURL(https://google.com{p.origem.lat},${p.origem.lng})}
+>
+<TouchableOpacity
+style={[s.btnVermelho, { flex: 1, marginTop: 0 }]}
+onPress={() => finalizar(p.id)}
+>
+)}
+
+))
+)}
+
+
+)}
+
+);
+}
+const s = StyleSheet.create({
+telaPreta: {
+flex: 1,
+backgroundColor: '#09090b',
+paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+},
+scrollLogin: {
+flexGrow: 1,
+justifyContent: 'center',
+padding: 20,
+},
+logo: {
+color: '#ffffff',
+fontSize: 38,
+fontWeight: 'bold',
+textAlign: 'center',
+letterSpacing: 4,
+},
+sub: {
+color: '#a1a1aa',
+textAlign: 'center',
+marginBottom: 24,
+fontSize: 14,
+},
+cartao: {
+backgroundColor: '#18181b',
+padding: 18,
+borderRadius: 16,
+borderWidth: 1,
+borderColor: '#27272a',
+marginBottom: 16,
+},
+tituloSecao: {
+color: '#ffffff',
+fontSize: 14,
+fontWeight: 'bold',
+marginBottom: 12,
+letterSpacing: 1,
+},
+label: {
+color: '#a1a1aa',
+fontSize: 11,
+fontWeight: 'bold',
+marginBottom: 6,
+letterSpacing: 0.5,
+},
+inputEscuro: {
+backgroundColor: '#27272a',
+color: '#ffffff',
+padding: 14,
+borderRadius: 10,
+marginBottom: 12,
 fontSize: 15,
 borderWidth: 1,
 borderColor: '#3f3f46',
@@ -428,4 +524,3 @@ gap: 10,
 marginTop: 10,
 },
 });
-  
